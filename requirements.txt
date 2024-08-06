@@ -5,3 +5,4 @@
 
 azure-functions
 requests
+azure-eventhub==5.12.1
