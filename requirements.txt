@@ -1,9 +1,5 @@
 # DO NOT include azure-functions-worker in this file
 # The Python Worker is managed by Azure Functions platform
 # Manually managing azure-functions-worker may cause unexpected issues
-# test 2
+
 azure-functions
-requests
-azure-eventhub==5.12.1
-azure-identity
-azure-appconfiguration

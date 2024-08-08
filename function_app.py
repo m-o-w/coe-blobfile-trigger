@@ -1,86 +1,48 @@
-import os
 import azure.functions as func
+import os
 import logging
-import re
 import json
-from azure.eventhub import EventHubProducerClient, EventData
-from azure.identity import DefaultAzureCredential
-from azure.appconfiguration import AzureAppConfigurationClient
+from app_config_manager import AppConfigManager  # Assuming your class is in a file named app_config_manager.py
+from exchange_rates import generate_exchange_rates  # Assuming your method is in a file named exchange_rates.py
+from event_hub_publisher import EventHubPublisher  # Assuming your class is in a file named event_hub_publisher.py
 
 app = func.FunctionApp()
 
-# Initialize Azure App Configuration client
-credential = DefaultAzureCredential()
-app_config_client = AzureAppConfigurationClient.from_connection_string(os.getenv("APP_CONFIG_CONNECTION_STRING"))
-
-# Fetch the Event Hub connection string from App Configuration
-config_setting = app_config_client.get_configuration_setting(key="EventHubConnectionString_FOREX_BLOB_TRIGGER")
-EVENT_HUB_CONNECTION_STR = config_setting.value
-EVENT_HUB_NAME = "coe-eventhub-01"
-
-@app.function_name(name="BlobTrigger1")
-@app.blob_trigger(arg_name="myblob", path="defaultcontainer2/inbound/{name}.json",
-                  connection="coestorageaccount01_STORAGE")
-def forex_file_trigger(myblob: func.InputStream):
-    logging.info(f"Python blob trigger function processed blob"
-                 f"Name: {myblob.name}, "
-                 f"Blob Size: {myblob.length} bytes")
-
-    contents = myblob.read().decode('utf-8')
-
-    if validate_blob(myblob.name, contents):
-        logging.info(f"Valid file received for processing: "
-                     f"Name: {myblob.name}, "
-                     f"Blob Size: {myblob.length} bytes")
-        logging.info(f"Blob contents: {contents[:1000]}")  # Log the first 1000 characters
-        exchange_rates = generate_exchange_rates(contents)
-        logging.info(f"Generated exchange rates: {json.dumps(exchange_rates, indent=2)}")
-        publish_to_event_hub(exchange_rates)
-    else:
-        logging.error(f"Validation failed for blob: {myblob.name}")
-
-def validate_blob(blob_name: str, contents: str) -> bool:
-    # Validate file contents are not null
-    if not contents:
-        logging.error(f"File contents are null: {blob_name}")
-        return False
-    return True
-
-def generate_exchange_rates(json_content: str) -> list:
-    data = json.loads(json_content)
-    base_currency = data['source']
-    quotes = data['quotes']
-    timestamp = data['timestamp']
-
-    exchange_rates = []
-
-    # Calculate exchange rates between all possible currency pairs
-    for from_currency, from_rate in quotes.items():
-        from_currency = from_currency[len(base_currency):]  # Extract target currency from key
-        for to_currency, to_rate in quotes.items():
-            to_currency = to_currency[len(base_currency):]  # Extract target currency from key
-            if from_currency != to_currency:
-                rate = (1 / from_rate) * to_rate
-                exchange_rates.append({
-                    "base_currency": from_currency,
-                    "target_currency": to_currency,
-                    "date": timestamp,
-                    "exchange_rate": rate
-                })
-
-    return exchange_rates
-
-def publish_to_event_hub(exchange_rates: list):
+@app.blob_trigger(arg_name="myblob", path=os.getenv('BLOB_PATH_FOREX_BLOB_TRIGGER'), connection="coestorageaccount01_STORAGE")
+def forex_blob_trigger(myblob: func.InputStream):
+    logging.info(f"Processing blob Name: {myblob.name}")
+    
     try:
-        producer = EventHubProducerClient.from_connection_string(conn_str=EVENT_HUB_CONNECTION_STR, eventhub_name=EVENT_HUB_NAME)
-        event_data_batch = producer.create_batch()
+        # Set up AppConfigManager with the connection string from environment variable
+        app_config_manager = AppConfigManager()
 
-        for rate in exchange_rates:
-            event_data_batch.add(EventData(json.dumps(rate)))
+        # Retrieve the Event Hub connection string and name from Azure App Configuration
+        event_hub_connection_string = app_config_manager.get_configuration_value("EventHubConnectionString_FOREX_BLOB_TRIGGER")
+        event_hub_name = app_config_manager.get_configuration_value("EventHubName_FOREX_EVENTHUB_TRIGGER")
+        
+        if not event_hub_connection_string:
+            raise ValueError("Event Hub connection string is not configured in Azure App Configuration.")
+        
+        if not event_hub_name:
+            raise ValueError("Event Hub name is not configured in Azure App Configuration.")
 
-        producer.send_batch(event_data_batch)
-        logging.info("Exchange rates published to Event Hub")
-    except Exception as e:
-        logging.error(f"Failed to publish exchange rates: {e}")
-    finally:
-        producer.close()
+        # Read the contents of the blob
+        blob_contents = myblob.read().decode('utf-8')
+        logging.info(f"Blob contents: {blob_contents}")
+
+        # Parse the JSON content and generate exchange rates
+        try:
+            exchange_rates = generate_exchange_rates(blob_contents)
+            logging.info(f"Generated exchange rates: {json.dumps(exchange_rates, indent=2)}")
+            
+            # Publish exchange rates to Event Hub
+            event_hub_publisher = EventHubPublisher(event_hub_connection_string, event_hub_name)
+            event_hub_publisher.publish_messages(exchange_rates)
+            logging.info(f"Successfully sent {len(exchange_rates)} messages to Event Hub.")
+
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing JSON: {e}")
+
+    except ValueError as e:
+        logging.error(e)
+        raise
