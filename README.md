@@ -25,9 +25,10 @@ Ensure the following environment variables are set in your Azure Function App se
 Add the following variables to your Azure App Configuration:
 
 - `EventHubConnectionString_FOREX_BLOB_TRIGGER`: The connection string for your Azure Event Hub.
-  - Example: `Endpoint=sb://<your-event-hub-namespace>.servicebus.windows.net/;SharedAccessKeyName=<key-name>;SharedAccessKey=<key>`
 - `EventHubName_FOREX_EVENTHUB_TRIGGER`: The name of your Azure Event Hub.
-  - Example: `forex-eventhub`
+- `ArchiveBlobFolder_FOREX_BLOB_TRIGGER`
+- `SourceBlobFolder_FOREX_BLOB_TRIGGER`
+- `ContainerName_FOREX_BLOB_TRIGGER`
 
 ## How It Works
 

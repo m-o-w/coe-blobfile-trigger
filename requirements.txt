@@ -5,3 +5,4 @@
 azure-functions
 azure-appconfiguration
 azure-eventhub
+azure-storage-blob
