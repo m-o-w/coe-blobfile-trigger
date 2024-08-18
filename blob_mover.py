@@ -7,6 +7,7 @@ class BlobMover:
 
     def move_blob(self, container_name, source_blob_name, target_blob_name):
         try:
+            logging.info(f"Attempting to move blob {source_blob_name} to  {target_blob_name}")
             source_blob_client = self.blob_service_client.get_blob_client(container=container_name, blob=source_blob_name)
             target_blob_client = self.blob_service_client.get_blob_client(container=container_name, blob=target_blob_name)
 
@@ -15,3 +16,4 @@ class BlobMover:
             logging.info(f"Moved blob {source_blob_name} to archive {target_blob_name}")
         except Exception as e:
             logging.error(f"Error moving blob: {e}")
+            raise
