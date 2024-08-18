@@ -72,7 +72,7 @@ def forex_blob_trigger(myblob: func.InputStream):
             blob_mover = BlobMover(storage_connection_string)
             source_blob_name = f"{source_blob_folder}/{myblob.name.split('/')[-1]}"
             target_blob_name = f"{archive_blob_folder}/{myblob.name.split('/')[-1]}"
-            blob_mover.move_blob(container_name, source_blob_name, target_blob_name)
+            blob_mover.move_blob(container_name, source_blob_name, target_blob_name, interface_id)
             logging.info(f'{log_prefix}: Blob moved from {source_blob_name} to {target_blob_name}.')
 
         except json.JSONDecodeError as e:
