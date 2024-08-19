@@ -2,13 +2,15 @@ import azure.functions as func
 import os
 import logging
 import json
-import uuid  # Import the uuid module to generate unique request IDs
+import uuid
 from app_config_manager import AppConfigManager
 from exchange_rates import generate_exchange_rates
 from event_hub_publisher import EventHubPublisher
 from blob_mover import BlobMover
 
 app = func.FunctionApp()
+
+app_config_manager = AppConfigManager()
 
 @app.blob_trigger(arg_name="myblob", path=os.getenv('BLOB_PATH_FOREX_BLOB_TRIGGER'), connection="coestorageaccount01_STORAGE")
 def forex_blob_trigger(myblob: func.InputStream):
@@ -19,37 +21,27 @@ def forex_blob_trigger(myblob: func.InputStream):
     logging.info(f'{log_prefix}: Blob trigger function started processing.')
 
     try:
-        # Set up AppConfigManager with the connection string from environment variable
-        app_config_manager = AppConfigManager()
-        logging.info(f'{log_prefix}: AppConfigManager initialized.')
-
-        # Retrieve configuration values from Azure App Configuration
-        event_hub_connection_string = app_config_manager.get_configuration_value("EventHubConnectionString_FOREX_BLOB_TRIGGER")
-        event_hub_name = app_config_manager.get_configuration_value("EventHubName_FOREX_EVENTHUB_TRIGGER")
-        archive_blob_folder = app_config_manager.get_configuration_value("ArchiveBlobFolder_FOREX_BLOB_TRIGGER")
-        source_blob_folder = app_config_manager.get_configuration_value("SourceBlobFolder_FOREX_BLOB_TRIGGER")
-        container_name = app_config_manager.get_configuration_value("ContainerName_FOREX_BLOB_TRIGGER")
-        storage_connection_string = app_config_manager.get_configuration_value("AZURE_STORAGE_CONNECTION_STRING")
-
-        logging.info(f'{log_prefix}: Retrieved configuration values from Azure App Configuration.')
+        # Retrieve cached configuration values
+        config = app_config_manager.get_cached_config()
+        logging.info(f'{log_prefix}: Retrieved configuration values from cache.')
 
         # Validate the retrieved configuration values
-        if not event_hub_connection_string:
+        if not config["event_hub_connection_string"]:
             raise ValueError(f"{log_prefix}: Event Hub connection string is not configured in Azure App Configuration.")
         
-        if not event_hub_name:
+        if not config["event_hub_name"]:
             raise ValueError(f"{log_prefix}: Event Hub name is not configured in Azure App Configuration.")
         
-        if not archive_blob_folder:
+        if not config["archive_blob_folder"]:
             raise ValueError(f"{log_prefix}: Archive blob folder is not configured in Azure App Configuration.")
         
-        if not source_blob_folder:
+        if not config["source_blob_folder"]:
             raise ValueError(f"{log_prefix}: Source blob folder is not configured in Azure App Configuration.")
         
-        if not container_name:
+        if not config["container_name"]:
             raise ValueError(f"{log_prefix}: Container name is not configured in Azure App Configuration.")
         
-        if not storage_connection_string:
+        if not config["storage_connection_string"]:
             raise ValueError(f"{log_prefix}: Azure Storage connection string is not configured in Azure App Configuration.")
 
         logging.info(f'{log_prefix}: Configuration values validated successfully.')
@@ -64,15 +56,15 @@ def forex_blob_trigger(myblob: func.InputStream):
             logging.info(f'{log_prefix}: Generated exchange rates: {json.dumps(exchange_rates, indent=2)}')
 
             # Publish exchange rates to Event Hub
-            event_hub_publisher = EventHubPublisher(event_hub_connection_string, event_hub_name)
+            event_hub_publisher = EventHubPublisher(config["event_hub_connection_string"], config["event_hub_name"])
             event_hub_publisher.publish_messages(exchange_rates)
             logging.info(f'{log_prefix}: Successfully sent {len(exchange_rates)} messages to Event Hub.')
 
             # Move the blob to the archive folder
-            blob_mover = BlobMover(storage_connection_string)
-            source_blob_name = f"{source_blob_folder}/{myblob.name.split('/')[-1]}"
-            target_blob_name = f"{archive_blob_folder}/{myblob.name.split('/')[-1]}"
-            blob_mover.move_blob(container_name, source_blob_name, target_blob_name, interface_id)
+            blob_mover = BlobMover(config["storage_connection_string"])
+            source_blob_name = f"{config['source_blob_folder']}/{myblob.name.split('/')[-1]}"
+            target_blob_name = f"{config['archive_blob_folder']}/{myblob.name.split('/')[-1]}"
+            blob_mover.move_blob(config["container_name"], source_blob_name, target_blob_name, interface_id)
             logging.info(f'{log_prefix}: Blob moved from {source_blob_name} to {target_blob_name}.')
 
         except json.JSONDecodeError as e:
